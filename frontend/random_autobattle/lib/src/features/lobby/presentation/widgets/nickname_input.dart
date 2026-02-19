@@ -19,6 +19,24 @@ class NicknameInput extends StatefulWidget {
 }
 
 class _NicknameInputState extends State<NicknameInput> {
+  // 1. Создаем FocusNode для отслеживания фокуса
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    // 2. Добавляем слушатель: при изменении фокуса вызываем setState для перерисовки
+    _focusNode.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    // 3. Обязательно освобождаем ресурсы
+    _focusNode.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -29,6 +47,7 @@ class _NicknameInputState extends State<NicknameInput> {
           child: TextField(
             controller: widget.controller,
             onChanged: widget.onChanged,
+            focusNode: _focusNode, // 4. Подключаем FocusNode к полю
             style: GoogleFonts.montserrat(
               fontSize: 26,
               fontWeight: FontWeight.w700,
@@ -64,23 +83,21 @@ class _NicknameInputState extends State<NicknameInput> {
                 borderRadius: BorderRadius.circular(20),
                 borderSide: const BorderSide(color: AppColors.errorRed, width: 5),
               ),
-              hintText: 'Ваш никнейм',
+              // 5. Главное изменение: скрываем hint, если есть фокус
+              hintText: _focusNode.hasFocus ? null : 'Ваш никнейм',
               hintStyle: GoogleFonts.montserrat(
                 fontSize: 26,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textDark.withOpacity(0.4),
               ),
-
-              // ── Настройки текста ошибки ───────────────────────────────
               errorText: widget.errorText,
               errorStyle: GoogleFonts.montserrat(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: AppColors.errorRed,
-                height: 1.3,                    // ← комфортный межстрочный интервал
+                height: 1.3,
               ),
-              errorMaxLines: 3,              // ← главное исправление: ∞ строк
-              // или можно указать конкретное число, например: errorMaxLines: 3,
+              errorMaxLines: 3,
             ),
           ),
         ),

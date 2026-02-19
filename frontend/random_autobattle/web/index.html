@@ -31,6 +31,29 @@
 
   <title>random_autobattle</title>
   <link rel="manifest" href="manifest.json">
+
+    <style>
+      /* Убираем желтый фон автозаполнения в Chrome/Firefox */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover, 
+      input:-webkit-autofill:focus, 
+      input:-webkit-autofill:active{
+          -webkit-box-shadow: 0 0 0 30px #ffffff inset !important; /* Цвет фона вашего input */
+          -webkit-text-fill-color: #000000 !important;
+          transition: background-color 5000s ease-in-out 0s;
+      }
+
+      /* Принудительно скрываем нативные подсказки Firefox */
+      input::-moz-placeholder {
+          color: transparent !important; /* Скрываем стандартный плейсхолдер */
+          opacity: 1 !important;
+      }
+      
+      /* Скрываем всплывающие подсказки браузера */
+      input::-webkit-input-placeholder {
+          color: transparent !important;
+      }
+    </style>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

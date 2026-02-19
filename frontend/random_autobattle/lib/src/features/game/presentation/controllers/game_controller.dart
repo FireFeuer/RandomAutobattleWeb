@@ -23,31 +23,81 @@ class GameController extends ChangeNotifier {
 
     s.on('state_update', (data) {
       if (data != null) {
+        final currentP1Wins = state.p1Wins;
+        final currentP2Wins = state.p2Wins;
+        
         state = GameStateModel.fromMap(data);
-        notifyListeners(); // Обновляем UI
+        
+        state = state.copyWith(
+          p1Wins: currentP1Wins,
+          p2Wins: currentP2Wins,
+        );
+        
+        notifyListeners();
       }
     });
 
     s.on('perk_offer', (data) {
-      if (onShowPerks != null) {
-        onShowPerks!(data['perks']);
+      if (data != null) {
+        print('perk_offer received: $data'); // Отладка
+        
+        if (data['wins'] != null) {
+          _updateWinsFromMap(data['wins']);
+        }
+        
+        if (onShowPerks != null) {
+          onShowPerks!(data['perks']);
+        }
       }
     });
 
     s.on('round_end', (data) {
-      bool gameOver = data['game_over'];
-      if (gameOver) {
-        String winner = data['winner_name'];
-        if (onGameOver != null) {
-          onGameOver!("Game Over! Winner: $winner");
+      if (data != null) {
+        print('round_end received: $data'); // Отладка
+        
+        // Обновляем победы
+        if (data['wins'] != null) {
+          _updateWinsFromMap(data['wins']);
+        }
+        
+        bool gameOver = data['game_over'] ?? false;
+        if (gameOver) {
+          String winner = data['winner_name'] ?? 'Unknown';
+          if (onGameOver != null) {
+            onGameOver!("Игра окончена! Победитель: $winner");
+          }
+        } else {
+          // ИСПРАВЛЕНИЕ: Явно уведомляем об изменении состояния
+          // и НЕ вызываем здесь start_picking_phase - это сделает сервер
+          notifyListeners();
         }
       }
     });
     
-    // Очистка при отключении оппонента
     s.on('opponent_disconnected', (_) {
-       if (onGameOver != null) onGameOver!("Opponent Disconnected");
+      if (onGameOver != null) {
+        onGameOver!("Противник отключился");
+      }
     });
+  }
+
+  void requestWinsSync() {
+    _socketService.emit('get_wins', {'match_id': matchId});
+  }
+
+  void _updateWinsFromMap(Map<String, dynamic> winsMap) {
+    // Теперь winsMap приходит с именами в качестве ключей
+    int newP1Wins = winsMap[state.p1Name] ?? state.p1Wins;
+    int newP2Wins = winsMap[state.p2Name] ?? state.p2Wins;
+    
+    // Обновляем состояние только если значения изменились
+    if (newP1Wins != state.p1Wins || newP2Wins != state.p2Wins) {
+      state = state.copyWith(
+        p1Wins: newP1Wins,
+        p2Wins: newP2Wins,
+      );
+      notifyListeners();
+    }
   }
 
   void _notifyReady() {
@@ -63,7 +113,6 @@ class GameController extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Отписываемся от событий, чтобы не было утечек памяти
     _socketService.off('state_update');
     _socketService.off('perk_offer');
     _socketService.off('round_end');

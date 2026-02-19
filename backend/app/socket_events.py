@@ -3,6 +3,7 @@ from flask_socketio import emit, join_room
 import uuid
 from . import socketio
 from .game.manager import game_manager
+from .game.player import Player
 
 @socketio.on('connect')
 def on_connect():
@@ -40,7 +41,9 @@ def player_ready(data):
     if match:
         match.ready_players.add(request.sid)
         print(f"Player ready: {request.sid}, total: {len(match.ready_players)}")
-        if len(match.ready_players) == 2:
+        # ИСПРАВЛЕНИЕ: Проверяем, что игра еще не началась
+        if len(match.ready_players) == 2 and match.state == "waiting":
+            print(f"Match {match_id}: Both players ready, starting game")
             match.start_game()
 
 @socketio.on('choose_perk')
@@ -50,6 +53,19 @@ def choose_perk(data):
     match = game_manager.get_match(match_id)
     if match:
         match.apply_perk(request.sid, perk_id)
+
+# В socket_events.py добавить
+@socketio.on('get_wins')
+def get_wins(data):
+    match_id = data['match_id']
+    match = game_manager.get_match(match_id)
+    if match:
+        wins_with_names = {
+            match.p1.name: match.wins.get(match.p1.sid, 0),
+            match.p2.name: match.wins.get(match.p2.sid, 0)
+        }
+        emit('wins_update', {'wins': wins_with_names}, room=request.sid)
+
 
 @socketio.on('disconnect')
 def on_disconnect():

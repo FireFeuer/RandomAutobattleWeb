@@ -12,7 +12,7 @@ import '../widgets/music_toggle_button.dart';
 import '../widgets/nickname_input.dart';
 import '../widgets/colorful_match_id_input.dart';
 import '../../../../core/constants/app_colors.dart';
-import 'dart:async';
+import '../widgets/how_to_play_dialog.dart';
 
 class LobbyScreen extends StatefulWidget {
   const LobbyScreen({super.key});
@@ -25,6 +25,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   final TextEditingController _nameController = TextEditingController();
   final SocketService _socket = SocketService();
   bool _hasTriedToSubmit = false;
+  bool _isLogoHovered = false;
   Function(dynamic)? _lobbyJoinedHandler;
 
 
@@ -51,6 +52,22 @@ class _LobbyScreenState extends State<LobbyScreen> {
     setState(() {
       _nicknameError = _computeNicknameError(_nameController.text);
     });
+  }
+
+  void _showHowToPlayDialog() {
+    final imagePaths = [
+      'assets/education_parts/edu_part_test1.png',
+      'assets/education_parts/edu_part_test2.png',
+      'assets/education_parts/edu_part_test3.png',
+    ];
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => HowToPlayDialog(
+        imagePaths: imagePaths,
+      ),
+    );
   }
 
   bool get _isFormValidNow => _nicknameError == null;
@@ -235,10 +252,43 @@ void _showJoinDialog() {
         children: [
           const LobbyBackground(),
           const Positioned(top: 40, left: 40, child: MusicToggleButton()),
+          
+          Positioned(
+            bottom: 40,
+            left: 40,
+            child: MouseRegion(
+              onEnter: (_) => setState(() => _isLogoHovered = true),
+              onExit: (_) => setState(() => _isLogoHovered = false),
+              cursor: SystemMouseCursors.click,
+              child: AnimatedScale(
+                scale: _isLogoHovered ? 1.15 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: AppColors.gridLine,
+                      width: 1.98,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Image.asset(
+                      'assets/images/onyr_logo_fix.png',
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           Positioned(
             bottom: 40,
             right: 40,
-            child: HowToPlayButton(onPressed: () {}),
+            child: HowToPlayButton(onPressed: _showHowToPlayDialog),
           ),
 
           Center(

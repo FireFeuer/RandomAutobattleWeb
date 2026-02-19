@@ -21,7 +21,7 @@ class SocketService {
     socket.onConnect((_) => print('✅ Connected to Server'));
     socket.onDisconnect((_) => print('❌ Disconnected from Server'));
     socket.onError((error) => print('⚠️ Socket Error: $error'));
-    socket.onAny((event, data) => print('📡 Event: $event'));
+    socket.onAny((event, data) => ());
   }
 
   // Методы-обертки для удобства

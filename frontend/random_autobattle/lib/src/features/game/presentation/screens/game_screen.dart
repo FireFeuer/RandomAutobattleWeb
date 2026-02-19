@@ -7,6 +7,8 @@ import '../../data/models/game_state_model.dart';
 import '../controllers/game_controller.dart';
 import '../widgets/health_bar.dart';
 import '../widgets/perk_dialog.dart';
+import '../widgets/round_progress_indicator.dart';
+import '../widgets/ability_icon.dart';
 
 class GameScreen extends StatefulWidget {
   final String matchId;
@@ -25,6 +27,7 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late GameController _controller;
   double _copyIconScale = 1.0;
+  final int winsToWin = 5;
 
   @override
   void initState() {
@@ -120,13 +123,6 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const SizedBox.shrink(),
-      ),
-      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
           // Фон с сеткой
@@ -160,32 +156,101 @@ class _GameScreenState extends State<GameScreen> {
                   padding: const EdgeInsets.all(20.0),
                   child: Column(
                     children: [
-                      // Верхняя строка с HealthBar'ами
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Левый игрок (противник)
-                          HealthBar(
-                            playerName: oppData['name'] as String,
-                            currentHp: oppData['hp'] as double,
-                            maxHp: oppData['max'] as double,
-                            shield: oppData['shield'] as double,
-                            isLeft: true,
+                          // Индикатор для противника (слева) - всегда показывает победы противника
+                          RoundProgressIndicator(
+                            currentWins: amIP1 ? state.p2Wins : state.p1Wins,  // Если я P1, показываем победы P2, иначе победы P1
+                            totalRoundsNeeded: winsToWin,
+                            isForPlayer: false,
                           ),
                           
-                          // Правый игрок (я)
-                          HealthBar(
-                            playerName: myData['name'] as String,
-                            currentHp: myData['hp'] as double,
-                            maxHp: myData['max'] as double,
-                            shield: myData['shield'] as double,
-                            isLeft: false,
+                          // Индикатор для текущего игрока (справа) - всегда показывает мои победы
+                          RoundProgressIndicator(
+                            currentWins: amIP1 ? state.p1Wins : state.p2Wins,  // Если я P1, показываем победы P1, иначе победы P2
+                            totalRoundsNeeded: winsToWin,
+                            isForPlayer: true,
                           ),
                         ],
                       ),
-                      
-                      const Spacer(),
+                      const SizedBox(height: 10),
+
+// Контейнер для способностей и полосок здоровья
+Column(
+  children: [
+    // Способности (на одном уровне для обоих игроков)
+    Row(
+      children: [
+        // Способности левого игрока (противника) - прижаты к левому краю
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: (amIP1 ? state.p2Abilities : state.p1Abilities).map<Widget>((ability) {
+                  return AbilityIcon(
+                    abilityData: ability,
+                    isLeft: true,
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+        
+        // Способности правого игрока (текущего) - прижаты к правому краю
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: (amIP1 ? state.p1Abilities : state.p2Abilities).map<Widget>((ability) {
+                  return AbilityIcon(
+                    abilityData: ability,
+                    isLeft: false,
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+    
+    const SizedBox(height: 8), // Минимальный отступ до полосок здоровья
+    
+    // Полоски здоровья
+    Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Левый игрок (противник)
+        HealthBar(
+          playerName: oppData['name'] as String,
+          currentHp: oppData['hp'] as double,
+          maxHp: oppData['max'] as double,
+          shield: oppData['shield'] as double,
+          isLeft: true,
+        ),
+        
+        // Правый игрок (я)
+        HealthBar(
+          playerName: myData['name'] as String,
+          currentHp: myData['hp'] as double,
+          maxHp: myData['max'] as double,
+          shield: myData['shield'] as double,  // Исправлено: было oppData['shield']
+          isLeft: false,
+        ),
+      ],
+    ),
+  ],
+),
+
+const Spacer(),
                       
                       // Информация в левом нижнем углу
                       Align(
@@ -247,11 +312,13 @@ class _GameScreenState extends State<GameScreen> {
                     ],
                   ),
                 ),
-              );
+              );         
             },
           ),
         ],
+        
       ),
+      
     );
   }
 }

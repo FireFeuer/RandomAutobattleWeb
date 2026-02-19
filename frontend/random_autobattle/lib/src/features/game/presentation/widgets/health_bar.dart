@@ -20,8 +20,9 @@ class HealthBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double hpPercentage = (currentHp / maxHp).clamp(0.0, 1.0);
-    
+    final safeHp = currentHp < 0 ? 0 : currentHp;
+    final hpPercentage = maxHp > 0 ? (safeHp / maxHp).clamp(0.0, 1.0) : 0.0;
+
     return Container(
       width: 200,
       padding: const EdgeInsets.all(8),
@@ -42,43 +43,55 @@ class HealthBar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Stack(
-            children: [
-              // Фон (серая полоска)
-              Container(
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.inputBorder, width: 2),
-                ),
-              ),
-              // HP
-              FractionallySizedBox(
-                widthFactor: hpPercentage,
-                child: Container(
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.inputBorder, width: 2),
+          // Внешний контейнер с границей
+          Container(
+            height: 30,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.inputBorder, width: 3),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Stack(
+                children: [
+                  // Фон (серая полоска)
+                  Container(
+                    color: Colors.grey[300],
                   ),
-                ),
-              ),
-              // Текст поверх
-              Positioned.fill(
-                child: Center(
-                  child: Text(
-                    "${currentHp.toInt()} HP${shield > 0 ? ' (+${shield.toInt()})' : ''}",
-                    style: GoogleFonts.montserrat(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  // HP (Цветная полоска)
+                  Positioned.fill(
+                    child: Align(
+                      alignment: isLeft ? Alignment.centerLeft : Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: hpPercentage,
+                        heightFactor: 1.0,
+                        child: Container(
+                          color: AppColors.primary,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // Текст поверх
+                  Center(
+                    child: Text(
+                      "${safeHp.toInt()} HP${shield > 0 ? ' (+${shield.toInt()})' : ''}",
+                      style: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.5),
+                            offset: const Offset(1, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),

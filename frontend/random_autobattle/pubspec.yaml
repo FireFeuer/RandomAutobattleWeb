@@ -58,4 +58,10 @@ flutter:
   assets:
       - assets/music/fruitmaster_music.mp3
 
+      - assets/education_parts/edu_part_test1.png
+      - assets/education_parts/edu_part_test2.png
+      - assets/education_parts/edu_part_test3.png
+
+      - assets/images/onyr_logo_fix.png
+
   uses-material-design: true
