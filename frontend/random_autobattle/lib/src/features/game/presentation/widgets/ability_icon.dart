@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -5,21 +6,108 @@ import '../../../../core/constants/app_colors.dart';
 class AbilityIcon extends StatefulWidget {
   final Map<String, dynamic> abilityData;
   final bool isLeft;
+  final String playerName;
+  final Stream<Map<String, dynamic>> activationStream;
 
   const AbilityIcon({
     super.key,
     required this.abilityData,
     required this.isLeft,
+    required this.playerName,
+    required this.activationStream,
   });
 
   @override
   State<AbilityIcon> createState() => _AbilityIconState();
 }
 
-class _AbilityIconState extends State<AbilityIcon> {
+class _AbilityIconState extends State<AbilityIcon> with TickerProviderStateMixin {
   bool _isHovered = false;
   final FocusNode _focusNode = FocusNode();
-  OverlayEntry? _overlayEntry;  // ДОБАВЛЯЕМ ЭТУ СТРОКУ
+  OverlayEntry? _overlayEntry;
+
+  late AnimationController _pulseController;
+  late Animation<double> _scaleAnimation;
+  StreamSubscription? _activationSub;
+
+  final List<Widget> _floatingElements = [];
+
+  @override
+  void initState() {
+    super.initState();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+
+    _scaleAnimation = TweenSequence([
+      TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.3), weight: 1),
+      TweenSequenceItem(tween: Tween<double>(begin: 1.3, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
+
+    _activationSub = widget.activationStream.listen((data) {
+      if (!mounted) return;
+
+      final abilityName = data['ability_name'] as String?;
+      final eventPlayerName = data['player_name'] as String?;
+      final effectType = data['effect_type'] as String?;
+
+      // Тики яда обрабатываются виджетом статусов возле здоровья, а не здесь
+      if (effectType == 'POISON_TICK') return;
+
+      // Если активировалась именно эта способность у этого игрока
+      if (abilityName == widget.abilityData['name_ru'] && eventPlayerName == widget.playerName) {
+        _pulseController.forward(from: 0.0);
+        _triggerFloatingEffect(data);
+      }
+    });
+  }
+
+  void _triggerFloatingEffect(Map<String, dynamic> data) {
+    final value = data['value'];
+    final isHeal = data['is_heal'] == true;
+    final isCrit = data['is_crit'] == true;
+    final effectType = data['effect_type'] as String?;
+
+    Color color = isHeal ? Colors.blue : Colors.redAccent;
+    String text = value.toString();
+    IconData? icon;
+
+    if (isCrit) {
+      color = Colors.orange;
+      text = '$text!';
+    }
+
+    if (effectType == 'REFLECT') {
+      color = Colors.purpleAccent;
+      icon = Icons.shield;
+    } else if (effectType == 'STUN') {
+      color = Colors.yellow;
+      icon = Icons.bolt;
+      text = 'Оглушение';
+    } else if (effectType == 'POISON_APPLY') {
+      color = Colors.green;
+      icon = Icons.coronavirus;
+    }
+
+    final key = UniqueKey();
+    setState(() {
+      _floatingElements.add(
+        _FloatingAnimation(
+          key: key,
+          text: text,
+          color: color,
+          icon: icon,
+          onComplete: () {
+            if (mounted) {
+              setState(() => _floatingElements.removeWhere((e) => e.key == key));
+            }
+          },
+        ),
+      );
+    });
+  }
 
   Color _getRarityColor(String rarity) {
     switch (rarity) {
@@ -37,7 +125,6 @@ class _AbilityIconState extends State<AbilityIcon> {
 
   String _getInitials(String name) {
     if (name.isEmpty) return '?';
-    // Берем первую букву, если есть второе слово - берем первую букву второго слова
     final words = name.split(' ');
     if (words.length > 1) {
       return '${words[0][0]}${words[1][0]}'.toUpperCase();
@@ -59,15 +146,14 @@ class _AbilityIconState extends State<AbilityIcon> {
     }
   }
 
-  // Добавляем методы для показа/скрытия тултипа через Overlay
   void _showTooltip() {
     if (_isHovered) return;
     _isHovered = true;
-    
+
     final overlay = Overlay.of(context);
     final renderBox = context.findRenderObject() as RenderBox;
     final position = renderBox.localToGlobal(Offset.zero);
-    
+
     _overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
         left: widget.isLeft ? position.dx : null,
@@ -79,7 +165,7 @@ class _AbilityIconState extends State<AbilityIcon> {
         ),
       ),
     );
-    
+
     overlay.insert(_overlayEntry!);
   }
 
@@ -91,6 +177,8 @@ class _AbilityIconState extends State<AbilityIcon> {
 
   @override
   void dispose() {
+    _activationSub?.cancel();
+    _pulseController.dispose();
     _focusNode.dispose();
     _overlayEntry?.remove();
     super.dispose();
@@ -101,7 +189,7 @@ class _AbilityIconState extends State<AbilityIcon> {
     final name = widget.abilityData['name_ru'] as String;
     final rarity = widget.abilityData['rarity'] as String;
     final stacks = widget.abilityData['stacks'] as int? ?? 1;
-    
+
     final rarityColor = _getRarityColor(rarity);
     final initials = _getInitials(name);
 
@@ -118,87 +206,96 @@ class _AbilityIconState extends State<AbilityIcon> {
             _hideTooltip();
           }
         },
-        child: Container(
-          width: 48,
-          height: 48,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                rarityColor.withOpacity(0.3),
-                rarityColor.withOpacity(0.6),
-              ],
-            ),
-            border: Border.all(
-              color: rarityColor.withOpacity(0.8),
-              width: 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: rarityColor.withOpacity(0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Center(
-                child: Text(
-                  initials,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withOpacity(0.5),
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
-                      ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            ScaleTransition(
+              scale: _scaleAnimation,
+              child: Container(
+                width: 48,
+                height: 48,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      rarityColor.withOpacity(0.3),
+                      rarityColor.withOpacity(0.6),
                     ],
                   ),
+                  border: Border.all(
+                    color: rarityColor.withOpacity(0.8),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: rarityColor.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ),
-              
-              // Индикатор стеков, если > 1
-              if (stacks > 1)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: rarityColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Center(
+                child: Stack(
+                  children: [
+                    Center(
                       child: Text(
-                        '$stacks',
+                        initials,
                         style: GoogleFonts.montserrat(
-                          fontSize: 10,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
+                    if (stacks > 1)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: rarityColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$stacks',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+            ),
+            // Вылетающие эффекты
+            ..._floatingElements,
+          ],
         ),
       ),
     );
@@ -211,9 +308,9 @@ class _AbilityIconState extends State<AbilityIcon> {
     final stats = widget.abilityData['stats'] as String;
     final stacks = widget.abilityData['stacks'] as int? ?? 1;
     final stackable = widget.abilityData['stackable'] as bool? ?? true;
-    
+
     final rarityColor = _getRarityColor(rarity);
-    
+
     return Container(
       width: 220,
       padding: const EdgeInsets.all(12),
@@ -305,8 +402,8 @@ class _AbilityIconState extends State<AbilityIcon> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    stackable 
-                        ? 'Уровень $stacks' 
+                    stackable
+                        ? 'Уровень $stacks'
                         : 'Не усиливается при повторе',
                     style: GoogleFonts.montserrat(
                       fontSize: 11,
@@ -319,6 +416,95 @@ class _AbilityIconState extends State<AbilityIcon> {
             ),
         ],
       ),
+    );
+  }
+}
+
+// Виджет для анимации вылетающего текста ВНИЗ
+class _FloatingAnimation extends StatefulWidget {
+  final String text;
+  final Color color;
+  final IconData? icon;
+  final VoidCallback onComplete;
+
+  const _FloatingAnimation({
+    super.key,
+    required this.text,
+    required this.color,
+    this.icon,
+    required this.onComplete,
+  });
+
+  @override
+  State<_FloatingAnimation> createState() => _FloatingAnimationState();
+}
+
+class _FloatingAnimationState extends State<_FloatingAnimation> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _positionAnimation;
+  late Animation<double> _opacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    _positionAnimation = Tween<Offset>(
+      begin: const Offset(0, 0),
+      end: const Offset(0, 40),
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    _opacityAnimation = Tween<double>(begin: 1.0, end: 0.0)
+        .animate(CurvedAnimation(parent: _controller, curve: const Interval(0.5, 1.0)));
+
+    _controller.forward().then((_) => widget.onComplete());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Positioned(
+          top: _positionAnimation.value.dy,
+          child: Opacity(
+            opacity: _opacityAnimation.value,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.icon != null) ...[
+                  Icon(widget.icon, color: widget.color, size: 16),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  widget.text,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: widget.color,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.8),
+                        blurRadius: 3,
+                        offset: const Offset(1, 1),
+                      )
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

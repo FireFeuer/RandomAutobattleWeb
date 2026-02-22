@@ -5,11 +5,13 @@ import '../../../../core/constants/app_colors.dart';
 class PerkDialog extends StatelessWidget {
   final List<dynamic> perks;
   final Function(String) onPerkSelected;
+  final bool amIP1;
 
   const PerkDialog({
     super.key,
     required this.perks,
     required this.onPerkSelected,
+    required this.amIP1,  // Добавить эту строку
   });
 
   @override
@@ -63,6 +65,7 @@ class PerkDialog extends StatelessWidget {
                           onPerkSelected(perks[index]['id']);
                           Navigator.pop(context);
                         },
+                        amIP1: amIP1,  // Добавить эту строку
                       ),
                     );
                   },
@@ -79,10 +82,12 @@ class PerkDialog extends StatelessWidget {
 class _PerkCard extends StatefulWidget {
   final dynamic perkData;
   final VoidCallback onTap;
+  final bool amIP1;
 
   const _PerkCard({
     required this.perkData,
     required this.onTap,
+    required this.amIP1,  // Добавить эту строку
   });
 
   @override
@@ -127,6 +132,9 @@ class _PerkCardState extends State<_PerkCard> {
     final rarityColor = _getRarityColor(rarity);
     final isStackable = perk['stackable'] ?? true;
     final currentStacks = perk['current_stacks'] ?? {};
+    final myStacks = widget.amIP1 
+        ? (perk['p1_stacks'] as int? ?? 0)
+        : (perk['p2_stacks'] as int? ?? 0);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -257,7 +265,7 @@ class _PerkCardState extends State<_PerkCard> {
                           const Spacer(),
                           
                           // Индикатор стеков
-                          if (currentStacks.isNotEmpty)
+                          if (myStacks > 0)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -277,7 +285,7 @@ class _PerkCardState extends State<_PerkCard> {
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    'Уровень ${currentStacks.values.first}',
+                                    'Уровень $myStacks',
                                     style: GoogleFonts.montserrat(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,

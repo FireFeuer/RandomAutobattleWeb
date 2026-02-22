@@ -66,6 +66,13 @@ def get_wins(data):
         }
         emit('wins_update', {'wins': wins_with_names}, room=request.sid)
 
+@socketio.on('get_action_logs')
+def get_action_logs(data):
+    match_id = data['match_id']
+    match = game_manager.get_match(match_id)
+    if match:
+        emit('action_log_update', {'logs': match.action_logs}, room=request.sid)
+
 
 @socketio.on('disconnect')
 def on_disconnect():

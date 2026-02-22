@@ -18,6 +18,7 @@ class Player:
         # Runtime stats (сбрасываются каждый раунд)
         self.shield = 0
         self.poison_stacks = 0
+        self.stun_duration = 0
 
     def reset_round_state(self):
         """Сброс состояния для нового раунда"""
@@ -56,7 +57,7 @@ class Player:
                 self.abilities_dict[ability_id] += 1
             else:
                 # Нельзя взять повторно
-                return False
+                return False  # <-- Это правильно
         else:
             # Добавляем новую способность
             self.abilities_dict[ability_id] = 1
@@ -109,7 +110,6 @@ class Player:
         return stats
         
     def to_dict(self):
-        """Сериализация для отправки клиенту"""
         abilities_list = []
         for ability_id, stacks in self.abilities_dict.items():
             ability_obj = get_ability_by_id(ability_id)
@@ -119,7 +119,7 @@ class Player:
                     'name_ru': ability_obj.name_ru,
                     'description': ability_obj.description,
                     'rarity': ability_obj.rarity.value,
-                    'stats': ability_obj.get_stats_text_with_stacks(stacks),  # Используем новый метод
+                    'stats': ability_obj.get_stats_text_with_stacks(stacks),
                     'stackable': ability_obj.stackable,
                     'stacks': stacks
                 })
@@ -129,5 +129,7 @@ class Player:
             "hp": int(self.hp), 
             "shield": int(self.shield), 
             "max_hp": self.max_hp,
-            "abilities": abilities_list
+            "abilities": abilities_list,
+            "poison_stacks": int(self.poison_stacks),  # Добавить
+            "stun_duration": int(self.stun_duration)    # Добавить
         }

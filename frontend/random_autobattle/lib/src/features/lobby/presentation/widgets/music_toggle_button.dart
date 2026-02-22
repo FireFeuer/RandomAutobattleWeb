@@ -11,7 +11,7 @@ class MusicToggleButton extends StatefulWidget {
 
 class _MusicToggleButtonState extends State<MusicToggleButton> {
   final _audio = AudioService();
-  double _currentVolume = 0.4; // 40% по умолчанию
+  double _currentVolume = 0.18; // 40% по умолчанию
 
   @override
   void initState() {

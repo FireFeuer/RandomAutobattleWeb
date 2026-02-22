@@ -9,6 +9,7 @@ import '../widgets/health_bar.dart';
 import '../widgets/perk_dialog.dart';
 import '../widgets/round_progress_indicator.dart';
 import '../widgets/ability_icon.dart';
+import '../widgets/player_action_log.dart';
 
 class GameScreen extends StatefulWidget {
   final String matchId;
@@ -48,12 +49,16 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _showPerkSelection(List<dynamic> perks) {
+    final state = _controller.state;
+    final bool amIP1 = widget.playerName == state.p1Name;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => PerkDialog(
         perks: perks,
         onPerkSelected: _controller.selectPerk,
+        amIP1: amIP1,
       ),
     );
   }
@@ -159,98 +164,158 @@ class _GameScreenState extends State<GameScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Индикатор для противника (слева) - всегда показывает победы противника
                           RoundProgressIndicator(
-                            currentWins: amIP1 ? state.p2Wins : state.p1Wins,  // Если я P1, показываем победы P2, иначе победы P1
-                            totalRoundsNeeded: winsToWin,
-                            isForPlayer: false,
-                          ),
-                          
-                          // Индикатор для текущего игрока (справа) - всегда показывает мои победы
-                          RoundProgressIndicator(
-                            currentWins: amIP1 ? state.p1Wins : state.p2Wins,  // Если я P1, показываем победы P1, иначе победы P2
+                            currentWins: amIP1 ? state.p1Wins : state.p2Wins, 
                             totalRoundsNeeded: winsToWin,
                             isForPlayer: true,
+                          ),
+
+                          RoundProgressIndicator(
+                            currentWins: amIP1 ? state.p2Wins : state.p1Wins,  
+                            totalRoundsNeeded: winsToWin,
+                            isForPlayer: false,
                           ),
                         ],
                       ),
                       const SizedBox(height: 10),
 
-// Контейнер для способностей и полосок здоровья
-Column(
-  children: [
-    // Способности (на одном уровне для обоих игроков)
-    Row(
-      children: [
-        // Способности левого игрока (противника) - прижаты к левому краю
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: (amIP1 ? state.p2Abilities : state.p1Abilities).map<Widget>((ability) {
-                  return AbilityIcon(
-                    abilityData: ability,
-                    isLeft: true,
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        ),
-        
-        // Способности правого игрока (текущего) - прижаты к правому краю
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: (amIP1 ? state.p1Abilities : state.p2Abilities).map<Widget>((ability) {
-                  return AbilityIcon(
-                    abilityData: ability,
-                    isLeft: false,
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-    
-    const SizedBox(height: 8), // Минимальный отступ до полосок здоровья
-    
-    // Полоски здоровья
-    Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Левый игрок (противник)
-        HealthBar(
-          playerName: oppData['name'] as String,
-          currentHp: oppData['hp'] as double,
-          maxHp: oppData['max'] as double,
-          shield: oppData['shield'] as double,
-          isLeft: true,
-        ),
-        
-        // Правый игрок (я)
-        HealthBar(
-          playerName: myData['name'] as String,
-          currentHp: myData['hp'] as double,
-          maxHp: myData['max'] as double,
-          shield: myData['shield'] as double,  // Исправлено: было oppData['shield']
-          isLeft: false,
-        ),
-      ],
-    ),
-  ],
-),
+                      // Контейнер для способностей и полосок здоровья
+                      Column(
+                        children: [
+                          // Способности (на одном уровне для обоих игроков)
+Row(
+                            children: [
+                              // Способности левого игрока (теперь мои способности)
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: (amIP1 ? state.p1Abilities : state.p2Abilities).map<Widget>((ability) {
+  return AbilityIcon(
+    abilityData: ability,
+    isLeft: true,
+    playerName: amIP1 ? state.p1Name : state.p2Name, // Добавлено
+    activationStream: _controller.activationStream,  // Добавлено
+  );
+}).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              
+                              // Способности правого игрока (теперь способности противника)
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: (amIP1 ? state.p2Abilities : state.p1Abilities).map<Widget>((ability) {
+  return AbilityIcon(
+    abilityData: ability,
+    isLeft: false,
+    playerName: amIP1 ? state.p2Name : state.p1Name, // Добавлено
+    activationStream: _controller.activationStream,  // Добавлено
+  );
+}).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 8),
+                          
+                          // Полоски здоровья и эффекты (Яд и т.д.)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Левый игрок (теперь Я)
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Если у вас уже есть StatusEffectsWidget, раскомментируйте это:
+                                  /*
+                                  StatusEffectsWidget(
+                                    playerName: myData['name'] as String,
+                                    activationStream: _controller.activationStream,
+                                    poisonStacks: amIP1 ? state.p1PoisonStacks : state.p2PoisonStacks,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  */
+                                  HealthBar(
+                                    playerName: myData['name'] as String,
+                                    currentHp: myData['hp'] as double,
+                                    maxHp: myData['max'] as double,
+                                    shield: myData['shield'] as double,
+                                    isLeft: true,
+                                  ),
+                                ],
+                              ),
+                              
+                              // Правый игрок (теперь Противник)
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  HealthBar(
+                                    playerName: oppData['name'] as String,
+                                    currentHp: oppData['hp'] as double,
+                                    maxHp: oppData['max'] as double,
+                                    shield: oppData['shield'] as double,
+                                    isLeft: false,
+                                  ),
+                                  // Если у вас уже есть StatusEffectsWidget, раскомментируйте это:
+                                  /*
+                                  const SizedBox(width: 8),
+                                  StatusEffectsWidget(
+                                    playerName: oppData['name'] as String,
+                                    activationStream: _controller.activationStream,
+                                    poisonStacks: amIP1 ? state.p2PoisonStacks : state.p1PoisonStacks,
+                                  ),
+                                  */
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8), // Минимальный отступ до полосок здоровья
+                          
+                          // Полоски здоровья
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Левый игрок (теперь Я)
+                              HealthBar(
+                                playerName: myData['name'] as String,
+                                currentHp: myData['hp'] as double,
+                                maxHp: myData['max'] as double,
+                                shield: myData['shield'] as double,
+                                isLeft: true,  // isLeft = true для левой стороны
+                              ),
+                              
+                              // Правый игрок (теперь Противник)
+                              HealthBar(
+                                playerName: oppData['name'] as String,
+                                currentHp: oppData['hp'] as double,
+                                maxHp: oppData['max'] as double,
+                                shield: oppData['shield'] as double,
+                                isLeft: false,  // isLeft = false для правой стороны
+                              ),
+                            ],
+                          ),
 
-const Spacer(),
+                          const SizedBox(height: 30),
+
+
+                        ],
+                      ),
+
+                      const Spacer(),
                       
                       // Информация в левом нижнем углу
                       Align(

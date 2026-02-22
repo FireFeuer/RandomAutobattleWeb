@@ -28,7 +28,7 @@ class AudioService {
       await _player.setLoopMode(LoopMode.all);
 
       // Громкость по умолчанию
-      await _player.setVolume(0.4);
+      await _player.setVolume(0.18);
 
       _isInitialized = true;
 

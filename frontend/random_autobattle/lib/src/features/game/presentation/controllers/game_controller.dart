@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../../../../core/services/socket_service.dart';
 import '../../data/models/game_state_model.dart';
 
@@ -12,6 +13,14 @@ class GameController extends ChangeNotifier {
   // События для UI (показать диалог, показать экран победы)
   Function(List<dynamic> perks)? onShowPerks;
   Function(String resultText)? onGameOver;
+
+    final Map<String, Map<String, dynamic>> _lastActivations = {};
+    final StreamController<Map<String, dynamic>> _activationStreamController = StreamController.broadcast();
+Stream<Map<String, dynamic>> get activationStream => _activationStreamController.stream;
+
+      Map<String, dynamic>? getLastActivation(String abilityName) {
+    return _lastActivations[abilityName];
+  }
 
   GameController({required this.matchId, required this.myName}) {
     _initListeners();
@@ -37,6 +46,13 @@ class GameController extends ChangeNotifier {
       }
     });
 
+s.on('ability_activation', (data) {
+  if (data != null) {
+    // Отправляем данные напрямую в виджеты через поток
+    _activationStreamController.add(data);
+  }
+});
+
     s.on('perk_offer', (data) {
       if (data != null) {
         print('perk_offer received: $data'); // Отладка
@@ -48,6 +64,13 @@ class GameController extends ChangeNotifier {
         if (onShowPerks != null) {
           onShowPerks!(data['perks']);
         }
+      }
+    });
+
+    s.on('action_log_update', (data) {
+      if (data != null && data['logs'] != null) {
+        state = state.copyWith(logs: data['logs']);
+        notifyListeners();
       }
     });
 
@@ -113,7 +136,9 @@ class GameController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _activationStreamController.close();
     _socketService.off('state_update');
+    _socketService.off('action_log_update');
     _socketService.off('perk_offer');
     _socketService.off('round_end');
     _socketService.off('opponent_disconnected');

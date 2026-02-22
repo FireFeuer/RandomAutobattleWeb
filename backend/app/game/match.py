@@ -2,6 +2,11 @@ import random
 import time
 from threading import Event
 from .abilities import get_ability_by_id, get_random_perks
+from .models.action_log import ActionLog, ActionType
+from .abilities import get_ability_by_id
+import random
+from .abilities import ABILITIES, get_ability_by_id, get_random_perks
+from .models.activation_event import ActivationEvent, ActivationType
 
 class Match:
     def __init__(self, match_id, p1, socketio):
@@ -15,6 +20,8 @@ class Match:
         self.room = match_id
         self.ready_players = set()
         self.state = "waiting"
+        self.action_logs = []  # Новое поле для хранения логов
+        self.max_logs = 50      # Максимальное количество логов
         
         self.p1.round_choice = None
         # Инициализируем способности игроков
@@ -39,6 +46,18 @@ class Match:
         self.round_num = 1
         self.start_picking_phase()
 
+    def add_action_log(self, log):
+        """Добавляет запись в лог и отправляет клиентам"""
+        self.action_logs.append(log.to_dict())
+        # Ограничиваем размер лога
+        if len(self.action_logs) > self.max_logs:
+            self.action_logs = self.action_logs[-self.max_logs:]
+        
+        # Отправляем обновление лога всем в комнате
+        self.socketio.emit('action_log_update', {
+            'logs': self.action_logs
+        }, room=self.room)
+
     # В методе start_picking_phase класса Match
     def start_picking_phase(self):
         if self.state == "finished":
@@ -53,9 +72,41 @@ class Match:
         print(f"Match {self.match_id}: Starting picking phase for round {self.round_num}")
 
         # Получаем случайные способности
-        perks_with_objects = get_random_perks(5)
+        all_abilities_list = list(ABILITIES.items())  # Получаем все способности из словаря
+        random.shuffle(all_abilities_list)  # Перемешиваем
+
+        valid_perks = []
+        for perk_name, perk_obj in all_abilities_list:
+            # Проверяем, можно ли предложить эту способность
+            p1_has = perk_name in self.p1.abilities_dict
+            p2_has = perk_name in self.p2.abilities_dict if self.p2 else False
+            
+            # Если способность есть у игрока И она не stackable - пропускаем
+            if (p1_has and not perk_obj.stackable) or (p2_has and not perk_obj.stackable):
+                continue
+            
+            valid_perks.append((perk_name, perk_obj))
+            
+            # Если набрали 5 валидных - хватит
+            if len(valid_perks) >= 5:
+                break
+
+        # Если всё ещё меньше 5, добираем из оставшихся (даже если не-stackable, но других нет)
+        if len(valid_perks) < 5:
+            remaining = [(n, a) for n, a in all_abilities_list if (n, a) not in valid_perks]
+            # Берём сколько нужно, даже если это не-stackable (лучше, чем ничего)
+            valid_perks.extend(remaining[:5 - len(valid_perks)])
+
+        # Если всё ещё меньше 5 (маловероятно), дублируем существующие
+        while len(valid_perks) < 5:
+            valid_perks.append(valid_perks[0])
+
         offer = []
-        for perk_name, perk_obj in perks_with_objects:
+        for perk_name, perk_obj in valid_perks[:5]:
+            # Получаем стеки для обоих игроков
+            p1_stacks = self.p1.abilities_dict.get(perk_name, 0)
+            p2_stacks = self.p2.abilities_dict.get(perk_name, 0) if self.p2 else 0
+            
             offer.append({
                 'id': perk_name,
                 'name_ru': perk_obj.name_ru,
@@ -63,7 +114,8 @@ class Match:
                 'rarity': perk_obj.rarity.value,
                 'stats': perk_obj.get_stats_text(),
                 'stackable': perk_obj.stackable,
-                'current_stacks': self._get_player_stacks(perk_name)
+                'p1_stacks': p1_stacks,
+                'p2_stacks': p2_stacks
             })
 
         wins_with_names = {
@@ -87,6 +139,11 @@ class Match:
         if self.p2 and perk_id in self.p2.abilities_dict:
             stacks[self.p2.sid] = self.p2.abilities_dict[perk_id]
         return stacks
+    
+    def add_activation_event(self, event):
+        """Отправляет событие активации конкретному игроку"""
+        # Отправляем только тому игроку, чья способность активировалась
+        self.socketio.emit('ability_activation', event.to_dict(), room=event.player_sid)
 
     def apply_perk(self, sid, perk_id):
         if self.state != "picking": return
@@ -190,20 +247,53 @@ class Match:
                         
                         if ab.is_heal:
                             attacker.hp = min(attacker.max_hp, attacker.hp + val)
+                            # Отправляем событие активации лечения
+                            self.add_activation_event(ActivationEvent(
+                                player_sid=attacker.sid,
+                                player_name=attacker.name,
+                                ability_name=ab.name_ru,
+                                ability_rarity_color=ab.get_rarity_color(),
+                                value=val,
+                                is_heal=True,
+                                is_crit=False
+                            ))
                         else:
                             dmg = val
+                            was_crit = False
                             
-                            # Применяем специальные эффекты из свойств способности
+                            # Крит
                             if "crit" in attacker.abilities_dict:
                                 crit_chance = 0.25
-                                # Увеличиваем шанс крита с количеством стеков
                                 crit_stacks = attacker.abilities_dict.get("crit", 0)
                                 if crit_stacks > 1:
                                     crit_chance = 0.25 + (crit_stacks - 1) * 0.05
                                 
                                 if random.random() < crit_chance:
                                     dmg = int(dmg * 2)
+                                    was_crit = True
+                                    # Отправляем событие крита
+                                    self.add_activation_event(ActivationEvent(
+                                        player_sid=attacker.sid,
+                                        player_name=attacker.name,
+                                        ability_name="Критический удар",
+                                        ability_rarity_color="#72c144",
+                                        value=dmg,
+                                        is_heal=False,
+                                        is_crit=True
+                                    ))
                             
+                            # Отправляем событие атаки
+                            self.add_activation_event(ActivationEvent(
+                                player_sid=attacker.sid,
+                                player_name=attacker.name,
+                                ability_name=ab.name_ru,
+                                ability_rarity_color=ab.get_rarity_color(),
+                                value=dmg,
+                                is_heal=False,
+                                is_crit=was_crit
+                            ))
+                            
+                            # Вампиризм
                             if "bloodlust" in attacker.abilities_dict:
                                 lifesteal = 0.5
                                 bloodlust_stacks = attacker.abilities_dict.get("bloodlust", 0)
@@ -212,7 +302,18 @@ class Match:
                                 
                                 heal_amt = int(dmg * lifesteal)
                                 attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
+                                # Отправляем событие вампиризма
+                                self.add_activation_event(ActivationEvent(
+                                    player_sid=attacker.sid,
+                                    player_name=attacker.name,
+                                    ability_name="Кровавая жажда",
+                                    ability_rarity_color="#77136f",
+                                    value=heal_amt,
+                                    is_heal=True,
+                                    is_crit=False
+                                ))
                             
+                            # Яд - применение
                             if "venom" in attacker.abilities_dict:
                                 poison_chance = 0.3
                                 venom_stacks = attacker.abilities_dict.get("venom", 0)
@@ -221,9 +322,21 @@ class Match:
                                 
                                 if random.random() < poison_chance:
                                     defender.poison_stacks += venom_stacks
+                                    # Отправляем событие отравления
+                                    self.add_activation_event(ActivationEvent(
+                                        player_sid=attacker.sid,
+                                        player_name=attacker.name,
+                                        ability_name="Яд",
+                                        ability_rarity_color="#72c144",
+                                        value=venom_stacks,
+                                        is_heal=False,
+                                        is_crit=False,
+                                        effect_type=ActivationType.POISON_APPLY
+                                    ))
                             
                             self.apply_damage(defender, dmg)
                             
+                            # Отражение
                             if "soulbind" in defender.abilities_dict:
                                 reflect = 0.2
                                 soulbind_stacks = defender.abilities_dict.get("soulbind", 0)
@@ -233,17 +346,21 @@ class Match:
                                 reflect_dmg = int(dmg * reflect)
                                 if reflect_dmg > 0:
                                     self.apply_damage(attacker, reflect_dmg)
+                                    # Отправляем событие отражения
+                                    self.add_activation_event(ActivationEvent(
+                                        player_sid=defender.sid,
+                                        player_name=attacker.name,
+                                        ability_name="Связь душ",
+                                        ability_rarity_color="#77136f",
+                                        value=reflect_dmg,
+                                        is_heal=False,
+                                        is_crit=False,
+                                        effect_type=ActivationType.REFLECT
+                                    ))
         
-        # Тик яда (увеличиваем урон со стеками)
-        # Проверяем обоих игроков на наличие яда
         for player in [self.p1, self.p2]:
             if player.poison_stacks > 0:
-                # Урон от яда зависит от количества стеков яда
-                poison_dmg_per_stack = 0.15  # Увеличили с 0.1 до 0.15
-                
-                # Проверяем, есть ли у атакующего способность venom для усиления яда
-                # (в реальном коде нужно определить, кто наложил яд)
-                # Для простоты используем максимальное значение
+                poison_dmg_per_stack = 0.15
                 for attacker in [self.p1, self.p2]:
                     if attacker != player and "venom" in attacker.abilities_dict:
                         venom_stacks = attacker.abilities_dict.get("venom", 0)
@@ -252,7 +369,20 @@ class Match:
                 
                 poison_dmg = player.poison_stacks * poison_dmg_per_stack
                 player.hp -= poison_dmg
-                # Уменьшаем количество стеков яда (теперь яд длится меньше)
+                
+                # Отправляем событие тика яда (всем, чтобы видели урон)
+                for p in [self.p1, self.p2]:
+                    self.add_activation_event(ActivationEvent(
+                        player_sid=p.sid,
+                        player_name=attacker.name,
+                        ability_name="Яд",
+                        ability_rarity_color="#72c144",
+                        value=int(poison_dmg),
+                        is_heal=False,
+                        is_crit=False,
+                        effect_type=ActivationType.POISON_TICK
+                    ))
+                
                 player.poison_stacks = max(0, player.poison_stacks - 0.5)
 
     def apply_damage(self, target, amount):
@@ -269,7 +399,8 @@ class Match:
         return {
             "p1": self.p1.to_dict(),
             "p2": self.p2.to_dict(),
-            "round": self.round_num
+            "round": self.round_num,
+            "logs": self.action_logs  # Добавляем логи в состояние
         }
 
     def resolve_round(self):

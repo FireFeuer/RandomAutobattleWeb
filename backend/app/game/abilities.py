@@ -229,3 +229,12 @@ def get_random_perks(count=5):
     all_abilities = list(ABILITIES.values())
     # Учитываем stackable при выборе
     return random.sample([(a.name, a) for a in all_abilities], count)
+
+def get_ability_description(self):
+    """Возвращает полное описание способности"""
+    desc = self.description
+    if self.is_heal:
+        desc += f" Лечит от {self.min_dmg} до {self.max_dmg} HP."
+    else:
+        desc += f" Наносит от {self.min_dmg} до {self.max_dmg} урона."
+    return desc
