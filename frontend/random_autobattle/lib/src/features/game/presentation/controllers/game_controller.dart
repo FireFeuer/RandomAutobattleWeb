@@ -48,7 +48,7 @@ Stream<Map<String, dynamic>> get activationStream => _activationStreamController
 
 s.on('ability_activation', (data) {
   if (data != null) {
-    // Отправляем данные напрямую в виджеты через поток
+    print('🔥 GAME CONTROLLER received activation: $data');
     _activationStreamController.add(data);
   }
 });
@@ -67,12 +67,13 @@ s.on('ability_activation', (data) {
       }
     });
 
-    s.on('action_log_update', (data) {
-      if (data != null && data['logs'] != null) {
-        state = state.copyWith(logs: data['logs']);
-        notifyListeners();
-      }
-    });
+s.on('action_log_update', (data) {
+  if (data != null && data['logs'] != null) {
+    print('📝 action_log_update received: ${data['logs'].length} logs'); // Отладка
+    state = state.copyWith(logs: data['logs']);
+    notifyListeners();
+  }
+});
 
     s.on('round_end', (data) {
       if (data != null) {

@@ -8,39 +8,217 @@ class Rarity(Enum):
     EPIC = "epic"
     LEGENDARY = "legendary"
 
+class AbilityType(Enum):
+    DAMAGE = "damage"
+    HEAL = "heal"
+    SHIELD = "shield"
+    STUN = "stun"
+    BUFF = "buff"
+
 class Ability:
     def __init__(self, name, name_ru, description, rarity, 
-                 min_dmg, max_dmg, min_delay, max_delay, 
-                 is_heal=False, stackable=True, special_properties=None):
-        self.name = name  # английский ID для кода
-        self.name_ru = name_ru  # русское название для отображения
+                 min_dmg=0, max_dmg=0, min_delay=2.0, max_delay=4.0, 
+                 ability_type=AbilityType.DAMAGE, stackable=True, special_properties=None):
+        self.name = name
+        self.name_ru = name_ru
         self.description = description
         self.rarity = rarity
         self.min_dmg = min_dmg
         self.max_dmg = max_dmg
         self.base_min_delay = min_delay
         self.base_max_delay = max_delay
-        self.is_heal = is_heal
-        self.stackable = stackable  # можно ли брать повторно
+        self.ability_type = ability_type
+        self.stackable = stackable
         self.special_properties = special_properties or {}
-        self.next_tick = 0
-        self.stack_count = 1  # количество стеков (для усиления)
 
     def get_delay(self, speed_modifier=1.0):
         mn = self.base_min_delay / speed_modifier
         mx = self.base_max_delay / speed_modifier
         return random.uniform(mn, mx)
+    
+    @property
+    def is_heal(self):
+        """Возвращаем True, если тип способности — лечение. 
+        Это исправит ошибку AttributeError."""
+        return self.ability_type == AbilityType.HEAL
+    
+    def to_dict(self, stacks=1):
+        # ЯВНО указываем is_heal на основе ability_type
+        is_heal_value = (self.ability_type == AbilityType.HEAL)
+        
+        return {
+            'id': self.name,           # Технический ID (например, "fireball")
+            'name': self.name_ru,      # ОБЯЗАТЕЛЬНО для Flutter (заголовок)
+            'name_ru': self.name_ru,   # Для совместимости
+            'description': self.description,
+            'rarity': self.rarity.value,
+            'stackable': self.stackable,
+            'is_heal': is_heal_value,
+            'type': self.ability_type.value,
+            'stats': self.get_stats_text(stacks)
+        }
 
-    def activate(self, speed_modifier=1.0, stack_multiplier=1.0):
-        """Возвращает (урон/хил, новая_задержка) с учётом множителя от стеков"""
-        val = random.randint(self.min_dmg, self.max_dmg)
+    def activate(self, attacker, target, match):
+        import random
+        from .models.activation_event import ActivationEvent, ActivationType
+
+        # Расчет множителя на основе стаков (уровня)
+        # В объекте, созданном в player.py, есть поле stack_count
+        current_stacks = getattr(self, 'stack_count', 1)
+        multiplier = 1.0 + (current_stacks - 1) * 0.5
         
-        # Применяем множитель от стеков
-        if self.stackable:
-            val = int(val * stack_multiplier)
+        # Базовое значение из диапазона, умноженное на уровень
+        raw_value = int(random.randint(self.min_dmg, self.max_dmg) * multiplier)
         
-        new_delay = self.get_delay(speed_modifier)
-        return val, new_delay
+        event = None
+
+        if self.ability_type == AbilityType.DAMAGE:
+            actual_damage = raw_value
+            was_crit = False
+            
+            # РАСЧЕТ КРИТА ЗДЕСЬ!
+            crit_chance = 0.1  # Базовый шанс 10%
+            
+            # Проверяем, есть ли у атакующего способность berserker_strike
+            if self.name == "berserker_strike":
+                crit_chance = self.special_properties.get('crit_chance', 0.4)
+                print(f"🎲 [DEBUG] {attacker.name} {self.name}: special crit_chance = {crit_chance}")
+            
+            # Проверяем, есть ли у атакующего способность crit (пассивка на крит)
+            if "crit" in attacker.abilities_dict:
+                crit_stacks = attacker.abilities_dict.get("crit", 0)
+                crit_chance += (crit_stacks - 1) * 0.05
+                print(f"🎲 [DEBUG] {attacker.name}: added {(crit_stacks-1) * 0.05} from crit stacks")
+            
+            print(f"🎲 [DEBUG] {attacker.name} {self.name}: final crit_chance = {crit_chance:.2f}")
+            
+            rand_val = random.random()
+            print(f"🎲 [DEBUG] random value = {rand_val:.3f}")
+            
+            if rand_val < crit_chance:
+                actual_damage = actual_damage * 2
+                was_crit = True
+                print(f"🎯 [CRIT] {attacker.name} {self.name}: CRIT! damage={actual_damage}")
+            
+            # 1. Божественный щит (Divine Shield) - Шанс 100% блока
+            if "divine_shield" in target.abilities_dict:
+                shield_template = ABILITIES.get("divine_shield")
+                block_chance = shield_template.special_properties.get("block_chance", 0.15)
+                if random.random() < block_chance:
+                    actual_damage = 0
+                    match.add_activation_event(ActivationEvent(
+                        player_sid=target.sid,
+                        player_name=target.name,
+                        ability_name="divine_shield",
+                        value=0,
+                        is_heal=False,
+                        effect_type=ActivationType.SHIELD
+                    ))
+
+            # 2. Пассивное снижение урона Барьером (Броня за стаки)
+            if actual_damage > 0 and "barrier" in target.abilities_dict:
+                barrier_stacks = target.abilities_dict["barrier"]
+                reduction = barrier_stacks * 10 
+                actual_damage = max(0, actual_damage - reduction)
+
+            # 3. Поглощение "синим" щитом (из полоски щита)
+            if actual_damage > 0 and target.shield > 0:
+                shield_absorbed = min(target.shield, actual_damage)
+                target.shield -= shield_absorbed
+                actual_damage -= shield_absorbed
+            
+            # 4. Нанесение урона в HP
+            if actual_damage > 0:
+                target.hp -= actual_damage
+
+            # Эффект вампиризма
+            if self.name == "vampiric_bite" and actual_damage > 0:
+                lifesteal = self.special_properties.get('lifesteal', 0.5)
+                heal_amt = int(actual_damage * lifesteal)
+                attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
+
+            print(f"🔴 DAMAGE DEBUG: {attacker.name} used {self.name}")
+            print(f"   raw_value: {raw_value}, actual_damage: {actual_damage}")
+            print(f"   was_crit: {was_crit}")
+
+            # ВСЕГДА создаем событие урона для DAMAGE способностей
+            event = ActivationEvent(
+                player_sid=attacker.sid,
+                player_name=attacker.name,
+                ability_name=self.name,
+                value=actual_damage,
+                is_heal=False,
+                is_crit=was_crit,
+                activation_type=self.ability_type
+            )
+
+            # Отдельно обрабатываем стан для chain_lightning
+            if self.name == "chain_lightning" and actual_damage > 0:
+                stun_chance = self.special_properties.get('stun_chance', 0.2)
+                if random.random() < stun_chance:
+                    # Применяем стан
+                    target.stun_duration = max(target.stun_duration, 1.0)
+                    
+                    print(f"⚡ {attacker.name} stunned {target.name} with chain_lightning!")
+                    
+                    # Отправляем отдельное событие стана
+                    match.add_activation_event(ActivationEvent(
+                        player_sid=target.sid,
+                        player_name=target.name,
+                        ability_name="chain_lightning_stun",
+                        value=0,
+                        is_heal=False,
+                        is_crit=False,
+                        effect_type=ActivationType.STUN
+                    ))
+
+        elif self.ability_type == AbilityType.HEAL:
+            # Сохраняем текущее HP для расчета реального лечения
+            old_hp = attacker.hp
+            # Применяем лечение
+            attacker.hp = min(attacker.max_hp, attacker.hp + raw_value)
+            # Вычисляем реальное количество вылеченного HP
+            actual_heal = attacker.hp - old_hp
+            
+            print(f"💚 HEAL: {attacker.name} healed for {actual_heal} HP (raw: {raw_value})")
+            
+            event = ActivationEvent(
+                player_sid=attacker.sid,
+                player_name=attacker.name,
+                ability_name=self.name,
+                value=actual_heal,
+                is_heal=True,
+                is_crit=False,
+                activation_type=self.ability_type
+            )
+
+        elif self.ability_type == AbilityType.STUN:
+            # Базовая длительность
+            base_duration = self.special_properties.get('stun_duration', 1.0)
+            
+            # Увеличиваем длительность в зависимости от количества стаков
+            stack_bonus = (current_stacks - 1) * 0.5
+            duration = base_duration + stack_bonus
+            
+            # Применяем стан (берем максимальное значение, если уже есть стан)
+            target.stun_duration = max(target.stun_duration, duration)
+            
+            print(f"❄️ STUN: {attacker.name} stunned {target.name} for {duration:.1f}s (stacks: {current_stacks})")
+            
+            event = ActivationEvent(
+                player_sid=attacker.sid,
+                player_name=attacker.name,
+                ability_name=self.name,
+                value=int(duration * 10),
+                is_heal=False,
+                is_crit=False,
+                effect_type=ActivationType.STUN
+            )
+
+        if event:
+            match.add_activation_event(event)
+        
+        return raw_value
 
     def get_rarity_color(self):
         """Возвращает цвет полоски для редкости"""
@@ -54,181 +232,99 @@ class Ability:
     
 
     
-    def get_stats_text_with_stacks(self, stacks=1):
-        """Возвращает текст с характеристиками с учетом количества стеков"""
-        stats = []
+    # ИСПРАВЛЕНИЕ: Добавляем stacks в параметры метода
+    def get_stats_text(self, stacks=1):
+        multiplier = 1.0 + (stacks - 1) * 0.5
         
-        # Базовый урон/лечение с множителем от стеков
-        stack_multiplier = 1.0
-        if stacks > 1 and self.stackable:
-            stack_multiplier = 1.0 + (stacks - 1) * 0.2
-        
-        min_dmg_with_stacks = int(self.min_dmg * stack_multiplier)
-        max_dmg_with_stacks = int(self.max_dmg * stack_multiplier)
-        
-        if self.is_heal:
-            stats.append(f"Лечение: {min_dmg_with_stacks}-{max_dmg_with_stacks}")
-        else:
-            stats.append(f"Урон: {min_dmg_with_stacks}-{max_dmg_with_stacks}")
-        
-        # Скорость (может меняться от Swiftness)
-        stats.append(f"Скорость: {self.base_min_delay:.1f}-{self.base_max_delay:.1f} сек")
-        
-        # Специальные свойства с учетом стеков
-        for key, value in self.special_properties.items():
-            if key == "crit_chance":
-                crit_chance = value + (stacks - 1) * 0.05 if stacks > 1 else value
-                stats.append(f"Крит: {int(crit_chance*100)}%")
-            elif key == "lifesteal":
-                lifesteal = value + (stacks - 1) * 0.1 if stacks > 1 else value
-                stats.append(f"Вампиризм: {int(lifesteal*100)}%")
-            elif key == "poison_chance":
-                poison_chance = value + (stacks - 1) * 0.1 if stacks > 1 else value
-                stats.append(f"Яд: {int(poison_chance*100)}%")
-            elif key == "reflect":
-                reflect = value + (stacks - 1) * 0.05 if stacks > 1 else value
-                stats.append(f"Отражение: {int(reflect*100)}%")
-            elif key == "speed_boost":
-                speed_boost = value + (stacks - 1) * 0.3 if stacks > 1 else value
-                stats.append(f"Бонус скорости: x{speed_boost:.1f}")
-        
-        if self.stackable:
-            stats.append(f"Усиление: +20% за уровень (текущий x{stack_multiplier:.1f})")
-        
-        return "\n".join(stats)
+        low = int(self.min_dmg * multiplier)
+        high = int(self.max_dmg * multiplier)
 
-    def get_stats_text(self):
-        """Возвращает текст с характеристиками"""
-        stats = []
-        if self.is_heal:
-            stats.append(f"Лечение: {self.min_dmg}-{self.max_dmg}")
-        else:
-            stats.append(f"Урон: {self.min_dmg}-{self.max_dmg}")
+        if self.ability_type == AbilityType.DAMAGE:
+            return f"Урон: {low}-{high}"
+        elif self.ability_type == AbilityType.HEAL:
+            return f"Лечение: {low}-{high}"
+        elif self.ability_type == AbilityType.SHIELD:
+            shield_val = 200 + (stacks - 1) * 50
+            return f"Щит: +{shield_val} в начале"
+        elif self.ability_type == AbilityType.STUN:
+            base_duration = self.special_properties.get('stun_duration', 1.0)
+            total_duration = base_duration + (stacks - 1) * 0.5
+            return f"Длительность: {total_duration:.1f} сек."
         
-        stats.append(f"Скорость: {self.base_min_delay:.1f}-{self.base_max_delay:.1f} сек")
-        
-        # Добавляем специальные свойства
-        for key, value in self.special_properties.items():
-            if key == "crit_chance":
-                stats.append(f"Крит: {int(value*100)}%")
-            elif key == "lifesteal":
-                stats.append(f"Вампиризм: {int(value*100)}%")
-            elif key == "poison_chance":
-                stats.append(f"Яд: {int(value*100)}%")
-            elif key == "reflect":
-                stats.append(f"Отражение: {int(value*100)}%")
-        
-        if self.stackable:
-            stats.append("Усил при повторном выборе")
-        
-        return "\n".join(stats)
-
+        return self.description
 
 # Предопределенные способности
 ABILITIES = {
-    "crit": Ability(
-        name="crit",
-        name_ru="Критический удар",
-        description="Шанс нанести двойной урон",
-        rarity=Rarity.RARE,
-        min_dmg=5, max_dmg=10,
-        min_delay=0.8, max_delay=1.5,  # Было 1.0-1.8
-        stackable=True,
-        special_properties={"crit_chance": 0.25}
+    # КЛАССИЧЕСКИЙ УРОН
+    "fireball": Ability(
+        "fireball", "Огненный шар", "Средний урон раз в 2-4 сек.", Rarity.COMMON,
+        15, 25, 2.0, 4.0
     ),
+    "magic_arrow": Ability(
+        "magic_arrow", "Магическая стрела", "Быстрый, но слабый урон", Rarity.COMMON,
+        5, 12, 1.2, 2.0
+    ),
+    "heavy_strike": Ability(
+        "heavy_strike", "Тяжелый удар", "Медленно, но очень больно", Rarity.RARE,
+        40, 70, 4.5, 6.5
+    ),
+    
+    # ЛЕЧЕНИЕ (не наносит урон)
+    "holy_light": Ability(
+        "holy_light", "Святой свет", "Исцеляет владельца", Rarity.RARE,
+        20, 40, 3.5, 5.0, ability_type=AbilityType.HEAL
+    ),
+    
+    # ЩИТЫ И ЗАЩИТА
     "barrier": Ability(
-        name="barrier",
-        name_ru="Барьер",
-        description="Поглощает урон щитом",
-        rarity=Rarity.COMMON,
-        min_dmg=10, max_dmg=20,
-        min_delay=1.5, max_delay=2.8,  # Было 2.0-3.5
-        is_heal=False,
-        stackable=True,
-        special_properties={"shield_gain": True}
-    ),
-    "venom": Ability(
-        name="venom",
-        name_ru="Яд",
-        description="Отравляет противника, нанося периодический урон",
-        rarity=Rarity.RARE,
-        min_dmg=3, max_dmg=6,
-        min_delay=0.6, max_delay=1.2,  # Было 0.8-1.5
-        stackable=True,
-        special_properties={"poison_chance": 0.3, "poison_damage": 0.1}
-    ),
-    "bloodlust": Ability(
-        name="bloodlust",
-        name_ru="Кровавая жажда",
-        description="Восстанавливает здоровье от нанесенного урона",
-        rarity=Rarity.EPIC,
-        min_dmg=8, max_dmg=15,
-        min_delay=1.2, max_delay=2.0,  # Было 1.5-2.5
-        stackable=True,
-        special_properties={"lifesteal": 0.5}
-    ),
-    "swiftness": Ability(
-        name="swiftness",
-        name_ru="Скорость",
-        description="Увеличивает скорость атак",
-        rarity=Rarity.RARE,
-        min_dmg=2, max_dmg=5,
-        min_delay=0.4, max_delay=1.0,  # Было 0.6-1.2
-        stackable=False,
-        special_properties={"speed_boost": 2.0}  # Увеличили бонус скорости с 1.5 до 2.0
-    ),
-    "soulbind": Ability(
-        name="soulbind",
-        name_ru="Связь душ",
-        description="Отражает часть полученного урона",
-        rarity=Rarity.EPIC,
-        min_dmg=4, max_dmg=8,
-        min_delay=1.5, max_delay=2.5,  # Было 1.8-3.0
-        stackable=True,
-        special_properties={"reflect": 0.2}
-    ),
-    "healing_light": Ability(
-        name="healing_light",
-        name_ru="Свет исцеления",
-        description="Мощное лечение",
-        rarity=Rarity.COMMON,
-        min_dmg=15, max_dmg=25,
-        min_delay=2.5, max_delay=3.8,  # Было 3.0-4.5
-        is_heal=True,
-        stackable=True
+        "barrier", "Энергетический барьер", "Дает щит в начале раунда. Может снижать получаемый урон", Rarity.COMMON,
+        ability_type=AbilityType.SHIELD, stackable=True
     ),
     "divine_shield": Ability(
-        name="divine_shield",
-        name_ru="Божественный щит",
-        description="Мощный щит, поглощающий урон",
-        rarity=Rarity.LEGENDARY,
-        min_dmg=25, max_dmg=40,
-        min_delay=3.0, max_delay=4.5,  # Было 3.5-5.0
-        is_heal=False,
-        stackable=True,
-        special_properties={"divine_protection": True}
+        "divine_shield", "Божественный щит", "Шанс 15% заблокировать любой урон", Rarity.LEGENDARY,
+        ability_type=AbilityType.BUFF, stackable=False, special_properties={"block_chance": 0.15}
     ),
+
+    # КОНТРОЛЬ
     "chain_lightning": Ability(
-        name="chain_lightning",
-        name_ru="Цепная молния",
-        description="Наносит урон и оглушает",
-        rarity=Rarity.LEGENDARY,
-        min_dmg=15, max_dmg=30,
-        min_delay=1.5, max_delay=3.0,  # Было 2.0-3.5
-        stackable=False,
-        special_properties={"stun_chance": 0.2}
-    )
+        "chain_lightning", "Цепная молния", "Урон и шанс оглушения 20%", Rarity.EPIC,
+        10, 20, 2.0, 4.4, special_properties={"stun_chance": 0.2}
+    ),
+    "ice_touch": Ability(
+        "ice_touch", "Ледяное касание", "Замораживает врага на 1 сек (без урона)", Rarity.RARE,
+        0, 0, 4.0, 6.0, ability_type=AbilityType.STUN, special_properties={"stun_duration": 1.0}
+    ),
+
+    # УСИЛЕНИЯ (Пассивки)
+    "berserker_strike": Ability(
+        "berserker_strike", "Ярость берсерка", "Мощный удар с повышенным шансом крита", 
+        Rarity.EPIC,
+        min_dmg=35, max_dmg=55, min_delay=3.5, max_delay=5.0, 
+        ability_type=AbilityType.DAMAGE, stackable=True, special_properties={"crit_chance": 0.4}
+    ),
+    "vampiric_bite": Ability(
+        "vampiric_bite", "Укус вампира", "Наносит урон и восстанавливает HP в размере 50% от урона", 
+        Rarity.LEGENDARY,
+        min_dmg=20, max_dmg=35, min_delay=3.0, max_delay=4.5, 
+        ability_type=AbilityType.DAMAGE, stackable=True, special_properties={"lifesteal": 0.50}
+    ),
 }
 
 def get_ability_by_id(ability_id):
     """Получить способность по ID"""
     return ABILITIES.get(ability_id)
 
-def get_random_perks(count=5):
-    """Получить случайный набор способностей с учётом stackable"""
-    all_abilities = list(ABILITIES.values())
-    # Учитываем stackable при выборе
-    return random.sample([(a.name, a) for a in all_abilities], count)
+def get_random_perks(count=5, exclude_ids=None):
+    if exclude_ids is None:
+        exclude_ids = []
+    
+    # Фильтруем список всех доступных способностей
+    available_ids = [aid for aid in ABILITIES.keys() if aid not in exclude_ids]
+    
+    # Выбираем случайные ID
+    selected_ids = random.sample(available_ids, min(count, len(available_ids)))
+    
+    return [ABILITIES[aid] for aid in selected_ids]
 
 def get_ability_description(self):
     """Возвращает полное описание способности"""

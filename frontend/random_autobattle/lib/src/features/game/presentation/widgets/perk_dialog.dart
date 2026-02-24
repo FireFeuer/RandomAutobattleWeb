@@ -125,6 +125,19 @@ class _PerkCardState extends State<_PerkCard> {
     }
   }
 
+    String _getDelayRange(Map<String, dynamic> perk) {
+    // Получаем диапазон времени из описания или возвращаем стандартный
+    if (perk['id'] == 'magic_arrow') return 'Скорость: 1.2-2.0 сек';
+    if (perk['id'] == 'fireball') return 'Скорость: 2.0-4.0 сек';
+    if (perk['id'] == 'heavy_strike') return 'Скорость: 4.5-6.5 сек';
+    if (perk['id'] == 'holy_light') return 'Скорость: 3.5-5.0 сек';
+    if (perk['id'] == 'chain_lightning') return 'Скорость: 2.0-4.4 сек';
+    if (perk['id'] == 'ice_touch') return 'Скорость: 4.0-6.0 сек';
+    if (perk['id'] == 'berserker_strike') return 'Скорость: 3.5-5.0 сек';
+    if (perk['id'] == 'vampiric_bite') return 'Скорость: 3.0-4.5 сек';
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final perk = widget.perkData;
@@ -239,26 +252,54 @@ class _PerkCardState extends State<_PerkCard> {
                               fontSize: 12,
                               color: AppColors.textDark.withOpacity(0.8),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            maxLines: null,
+                            overflow: TextOverflow.visible,
+                            softWrap: true,
                           ),
                           
                           const SizedBox(height: 12),
                           
-                          // Характеристики
+                         // Характеристики
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: AppColors.background,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(
-                              perk['stats'] ?? '',
-                              style: GoogleFonts.montserrat(
-                                fontSize: 11,
-                                color: AppColors.textDark,
-                                height: 1.4,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Статы (диапазон урона/лечения)
+                                Text(
+                                  perk['stats'] ?? '',
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 11,
+                                    color: AppColors.textDark,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Диапазон времени применения
+                                Text(
+                                  _getDelayRange(perk),
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 11,
+                                    color: AppColors.textDark.withOpacity(0.8),
+                                  ),
+                                ),
+                                // Если есть специальные свойства, показываем их
+                                if (perk['type'] == 'stun')
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'Длительность: 1 сек',
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 11,
+                                        color: const Color.fromARGB(255, 106, 97, 18),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           

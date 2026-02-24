@@ -20,7 +20,7 @@ class ActivationEvent:
         self.ability_name = ability_name
         self.ability_rarity_color = ability_rarity_color
         self.value = value
-        self.is_heal = is_heal
+        self.is_heal = is_heal  # Убедитесь, что это поле есть
         self.is_crit = is_crit
         self.effect_type = effect_type
         self.activation_type = activation_type
@@ -38,9 +38,8 @@ class ActivationEvent:
             "ability_name": self.ability_name,
             "ability_rarity_color": self.ability_rarity_color,
             "value": self.value,
-            "is_heal": self.is_heal,
+            "is_heal": self.is_heal,  # Обязательно передаем
             "is_crit": self.is_crit,
-            # Обязательно пропускаем через serialize
             "effect_type": serialize(self.effect_type),
             "activation_type": serialize(self.activation_type)
         }

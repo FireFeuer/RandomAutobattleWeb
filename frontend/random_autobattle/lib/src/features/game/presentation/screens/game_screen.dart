@@ -186,45 +186,43 @@ class _GameScreenState extends State<GameScreen> {
 Row(
                             children: [
                               // Способности левого игрока (теперь мои способности)
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      children: (amIP1 ? state.p1Abilities : state.p2Abilities).map<Widget>((ability) {
-  return AbilityIcon(
-    abilityData: ability,
-    isLeft: true,
-    playerName: amIP1 ? state.p1Name : state.p2Name, // Добавлено
-    activationStream: _controller.activationStream,  // Добавлено
-  );
-}).toList(),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              
-                              // Способности правого игрока (теперь способности противника)
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: (amIP1 ? state.p2Abilities : state.p1Abilities).map<Widget>((ability) {
-  return AbilityIcon(
-    abilityData: ability,
-    isLeft: false,
-    playerName: amIP1 ? state.p2Name : state.p1Name, // Добавлено
-    activationStream: _controller.activationStream,  // Добавлено
-  );
-}).toList(),
-                                    ),
-                                  ),
-                                ),
-                              ),
+Expanded(
+  child: Align(
+    alignment: Alignment.centerLeft,
+    child: Wrap(
+        spacing: -18, // Горизонтальный отступ между элементами (по умолчанию 0)
+      runSpacing: -18, // Вертикальный отступ между рядами, если элементы переносятся
+      children: (amIP1 ? state.p1Abilities : state.p2Abilities).map((ability) {
+        return AbilityIcon(
+          abilityData: ability,
+          isLeft: true,
+          playerName: amIP1 ? state.p1Name : state.p2Name,
+          activationStream: _controller.activationStream,
+        );
+      }).toList(),
+    ),
+  ),
+),
+
+// Способности правого игрока
+Expanded(
+  child: Align(
+    alignment: Alignment.centerRight,
+    child: Wrap(
+        spacing: -18, // Горизонтальный отступ между элементами (по умолчанию 0)
+  runSpacing: -18, // Вертикальный отступ между рядами, если элементы переносятся
+      alignment: WrapAlignment.end,
+      children: (amIP1 ? state.p2Abilities : state.p1Abilities).map((ability) {
+        return AbilityIcon(
+          abilityData: ability,
+          isLeft: false,
+          playerName: amIP1 ? state.p2Name : state.p1Name,
+          activationStream: _controller.activationStream,
+        );
+      }).toList(),
+    ),
+  ),
+),
                             ],
                           ),
                           
@@ -283,35 +281,6 @@ Row(
                             ],
                           ),
                           const SizedBox(height: 8), // Минимальный отступ до полосок здоровья
-                          
-                          // Полоски здоровья
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Левый игрок (теперь Я)
-                              HealthBar(
-                                playerName: myData['name'] as String,
-                                currentHp: myData['hp'] as double,
-                                maxHp: myData['max'] as double,
-                                shield: myData['shield'] as double,
-                                isLeft: true,  // isLeft = true для левой стороны
-                              ),
-                              
-                              // Правый игрок (теперь Противник)
-                              HealthBar(
-                                playerName: oppData['name'] as String,
-                                currentHp: oppData['hp'] as double,
-                                maxHp: oppData['max'] as double,
-                                shield: oppData['shield'] as double,
-                                isLeft: false,  // isLeft = false для правой стороны
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 30),
-
-
                         ],
                       ),
 

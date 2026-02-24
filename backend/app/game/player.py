@@ -1,6 +1,7 @@
 import time
 from .abilities import get_ability_by_id, Ability
-
+import random
+from .abilities import get_ability_by_id, Ability, AbilityType
 class Player:
     def __init__(self, name, sid):
         self.name = name
@@ -24,6 +25,7 @@ class Player:
         """Сброс состояния для нового раунда"""
         self.hp = self.max_hp
         self.poison_stacks = 0
+        self.stun_duration = 0
         
         # Базовый щит от барьера
         self.shield = 0
@@ -43,6 +45,16 @@ class Player:
         current_time = time.time()
         for ability in self.abilities:
             ability.next_tick = current_time + ability.get_delay(speed_mod)
+
+    def is_stunned(self):
+        """Проверка, оглушен ли игрок"""
+        return self.stun_duration > 0
+    
+    def update_stun(self, delta_time):
+        if self.stun_duration > 0:
+            self.stun_duration = max(0, self.stun_duration - delta_time)
+            if self.stun_duration > 0:
+                print(f"DEBUG: {self.name} still stunned for {self.stun_duration:.2f}s")
     
     def add_ability(self, ability_id):
         """Добавление способности игроку с учётом стеков"""
@@ -114,15 +126,24 @@ class Player:
         for ability_id, stacks in self.abilities_dict.items():
             ability_obj = get_ability_by_id(ability_id)
             if ability_obj:
-                abilities_list.append({
-                    'id': ability_id,
-                    'name_ru': ability_obj.name_ru,
-                    'description': ability_obj.description,
-                    'rarity': ability_obj.rarity.value,
-                    'stats': ability_obj.get_stats_text_with_stacks(stacks),
-                    'stackable': ability_obj.stackable,
-                    'stacks': stacks
-                })
+                # Рассчитываем множитель для отображения актуальных цифр в интерфейсе
+                multiplier = 1.0 + (stacks - 1) * 0.5
+                
+                ability_dict = {
+                    "id": ability_obj.name,
+                    "name": ability_obj.name_ru,      # ОБЯЗАТЕЛЬНО: Flutter ищет это поле
+                    "name_ru": ability_obj.name_ru,
+                    "description": ability_obj.description,
+                    "rarity": ability_obj.rarity.value,
+                    "min_dmg": int(ability_obj.min_dmg * multiplier),
+                    "max_dmg": int(ability_obj.max_dmg * multiplier),
+                    "type": ability_obj.ability_type.value,
+                    "is_heal": (ability_obj.ability_type == AbilityType.HEAL),
+                    "stacks": stacks,
+                    # Добавляем текстовую строку статов, чтобы иконка могла её показать
+                    "stats": ability_obj.get_stats_text(stacks) 
+                }
+                abilities_list.append(ability_dict)
         
         return {
             "name": self.name, 
@@ -130,6 +151,26 @@ class Player:
             "shield": int(self.shield), 
             "max_hp": self.max_hp,
             "abilities": abilities_list,
-            "poison_stacks": int(self.poison_stacks),  # Добавить
-            "stun_duration": int(self.stun_duration)    # Добавить
+            "poison_stacks": self.poison_stacks,
+            "stun": self.stun_duration
         }
+    
+
+    def update_abilities_from_dict(self):
+        """
+        Превращает словарь abilities_dict {id: stacks} в список объектов Ability 
+        для использования в цикле боя.
+        """
+        self.abilities = []
+        for ability_id, stacks in self.abilities_dict.items():
+            ability_template = get_ability_by_id(ability_id)
+            if ability_template:
+                # Создаем копию объекта, чтобы у каждого игрока были свои таймеры (next_tick)
+                import copy
+                new_ability = copy.copy(ability_template)
+                new_ability.stack_count = stacks
+                # Инициализируем первый тик (можно добавить рандом, чтобы не все сразу били)
+                new_ability.next_tick = time.time() + random.uniform(0, 1.0)
+                self.abilities.append(new_ability)
+        
+        print(f"DEBUG: Player {self.name} initialized {len(self.abilities)} ability objects.")
